@@ -108,14 +108,26 @@ def logout():
 @app.route("/quote", methods=["GET", "POST"])
 @login_required
 def quote():
-    """Get stock quote."""
-    return apology("TODO")
+    if request.method == 'GET':
+        return render_template('quote.html')
+    elif request.form.get('symbol') and lookup(request.form.get('symbol')) != None:
+        return render_template('quoted.html', data=lookup(request.form.get('symbol')))
+    else:
+        return apology("Invalid Stock Symbol", 403)
 
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
     """Register user"""
-    return apology("TODO")
+    if request.method == 'GET':
+        return render_template('register.html')
+    elif request.form['username'] and request.form['password'] and request.form['confirmation'] and (request.form['password'] == request.form['confirmation']):
+        if len(db.execute("select * from users where username = :username", username=request.form.get("username"))) != 1:
+            hashPW = generate_password_hash(request.form['password'], method='pbkdf2:sha256', salt_length=8)
+            db.execute("INSERT INTO users (username, hash) VALUES (:username, :hash)", username=request.form.get("username"), hash=hashPW)
+            return redirect('/login')
+    #else:
+    #    return apology("Username, Password or confitmation incorrect, Please try again!", 403)
 
 
 @app.route("/sell", methods=["GET", "POST"])

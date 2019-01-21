@@ -36,31 +36,58 @@ Session(app)
 db = SQL("sqlite:///finance.db")
 
 
-@app.route("/")
+
+#TODO Complete the implementation of index in such a way that it displays an HTML table summarizing, 
+# for the user currently logged in, which stocks the user owns, the numbers of shares owned, the current 
+# price of each stock, and the total value of each holding (i.e., shares times price). Also display the 
+# user’s current cash balance along with a grand total (i.e., stocks' total value plus cash).
+
+#for each user:
+#stocks user owns, 
+#amount of share in that stock, 
+#current price of the stock, 
+#total value of the holding, 
+#users cash balance, 
+#grand total(stock value + total cash) this uses current costs i.e. use lookup
+
+@app.route("/", methods=['GET'])
 @login_required
 def index():
-    """Show portfolio of stocks"""
-    return apology("TODO")
+    user = db.execute("select username, cash, symbol, shareAmount, shareCost from users inner join purchases on users.id = purchases.user where users.id=:userID", userID = session['user_id'])
+    holdingsTotal = 0
+    for i in user:
+        curr_stock = lookup(i['symbol'])
+        curr_price = curr_stock['price']
+        holdingsTotal += curr_price
+    holdingsTotal += user[0]['cash']
+    return render_template('index.html', total_holdings=float(holdingsTotal), data=user)
+
+    
 
 
 @app.route("/buy", methods=["GET", "POST"])
 @login_required
 def buy():
     if request.method == 'GET':
-        return render_template('buy.html')
-    elif request.form.get('symbol') and request.form.get('shareAmount') != None:
-        symbol = request.form.get('symbol')
-        amountOfShares = request.form.get('shareAmount')
-        funds = db.execute("select cash from users where id= :id", id = session.get("user_id"))
-        shareCost = lookup(symbol)
-        totalCost = shareCost['price']
-        if shareCost == None:
-           return apology()
-        elif totalCost < float(funds):
-            db.execute("insert into purchases (symbol, share_amount, user, purchase_cost) values (:symbol, :share_amount, :user, :purchase_cost)", symbol=symbol, share_amount=amountOfShares, user=session.get('user_id'), purchase_cost =  int(totalCost))
-            ##TODO Remove cost from cash for user
+        return render_template('buy.html', bought=False)
 
-    return apology("TODO")
+    elif request.form.get('symbol') and request.form.get('shareAmount') != None:
+        funds = db.execute("select cash from users where id= :id", id = session.get("user_id"))
+        share = lookup(request.form.get('symbol'))
+        totalCost = int(request.form.get('shareAmount')) * share['price']
+
+        if share == None:
+           return apology("That share doesn't exist.")
+
+        elif totalCost < float(funds[0]['cash']):
+            #Add purchase to purchases DB, USing user id as link
+            db.execute("insert into purchases (symbol, shareAmount, user, shareCost) values (:symbol, :share_amount, :user, :purchase_cost)", 
+            symbol=request.form.get('symbol'), share_amount=int(request.form.get('shareAmount')), user=session.get('user_id'), purchase_cost =  int(totalCost))
+            #Update users db, removibg the total cost from the users available funds
+            db.execute("update users set cash=:cash where id=:userid", cash= int(float(funds[0]['cash']) - totalCost), userid=session.get("user_id"))
+            return render_template('buy.html', bought=True, data=(float(funds[0]['cash']) - float(totalCost), request.form.get('symbol'), share['price'], request.form.get('shareAmount')))
+
+    return apology("Error, Please try again.")
 
 
 @app.route("/history")

@@ -1,0 +1,27 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    Quote
+{% endblock %}
+
+{% block main %}
+Welcome: {{data[0]['username']}}
+    <table>
+        <thead>
+            <th>Symbol</th>
+            <th>Shares</th>
+            <th>Cost Per Share</th>
+        </thead>
+        <tbody>
+            {% for i in data %}
+                <tr>
+                    <td>{{i['symbol']}}</td>
+                    <td>{{i['shareAmount']}}</td>
+                    <td>{{i['shareCost']}}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p> Cash {{data[0]['cash']}}
+    <p> Total Holdings: {{total_holdings}} </p>
+{% endblock %}

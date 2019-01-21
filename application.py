@@ -46,7 +46,20 @@ def index():
 @app.route("/buy", methods=["GET", "POST"])
 @login_required
 def buy():
-    """Buy shares of stock"""
+    if request.method == 'GET':
+        return render_template('buy.html')
+    elif request.form.get('symbol') and request.form.get('shareAmount') != None:
+        symbol = request.form.get('symbol')
+        amountOfShares = request.form.get('shareAmount')
+        funds = db.execute("select cash from users where id= :id", id = session.get("user_id"))
+        shareCost = lookup(symbol)
+        totalCost = shareCost['price']
+        if shareCost == None:
+           return apology()
+        elif totalCost < float(funds):
+            db.execute("insert into purchases (symbol, share_amount, user, purchase_cost) values (:symbol, :share_amount, :user, :purchase_cost)", symbol=symbol, share_amount=amountOfShares, user=session.get('user_id'), purchase_cost =  int(totalCost))
+            ##TODO Remove cost from cash for user
+
     return apology("TODO")
 
 

@@ -6,6 +6,8 @@ from flask_session import Session
 from tempfile import mkdtemp
 from werkzeug.exceptions import default_exceptions
 from werkzeug.security import check_password_hash, generate_password_hash
+import uuid
+
 
 from helpers import apology, login_required, lookup, usd
 
@@ -53,17 +55,15 @@ db = SQL("sqlite:///finance.db")
 @app.route("/", methods=['GET'])
 @login_required
 def index():
-    user = db.execute("select username, cash, symbol, shareAmount, shareCost from users inner join purchases on users.id = purchases.user where users.id=:userID", userID = session['user_id'])
+    user = db.execute("select distinct cash, symbol, sum(shareAmount), sum(shareCost) from users left join userstocks on users.id = userstocks.user left join transactions on userstocks.transactionID = transactions.id where users.id=:userID and transactionType='purchase' group by symbol", userID = session['user_id'])
     holdingsTotal = 0
-    for i in user:
-        curr_stock = lookup(i['symbol'])
-        curr_price = curr_stock['price']
-        holdingsTotal += curr_price
-    holdingsTotal += user[0]['cash']
-    return render_template('index.html', total_holdings=float(holdingsTotal), data=user)
-
-    
-
+    if user[0]['sum(shareAmount)'] != None:
+        for i in user:
+            curr_stock = lookup(i['symbol'])
+            curr_price = curr_stock['price']
+            holdingsTotal += curr_price * i['sum(shareAmount)']
+        holdingsTotal += user[0]['cash']
+    return render_template('index.html', total_holdings=float(holdingsTotal), data=user, cash=float(user[0]['cash']))
 
 @app.route("/buy", methods=["GET", "POST"])
 @login_required
@@ -74,18 +74,22 @@ def buy():
     elif request.form.get('symbol') and request.form.get('shareAmount') != None:
         funds = db.execute("select cash from users where id= :id", id = session.get("user_id"))
         share = lookup(request.form.get('symbol'))
-        totalCost = int(request.form.get('shareAmount')) * share['price']
+        costPerShare = share['price']
 
         if share == None:
            return apology("That share doesn't exist.")
 
-        elif totalCost < float(funds[0]['cash']):
+        elif (costPerShare * int(request.form.get('shareAmount'))) < float(funds[0]['cash']):
             #Add purchase to purchases DB, USing user id as link
-            db.execute("insert into purchases (symbol, shareAmount, user, shareCost) values (:symbol, :share_amount, :user, :purchase_cost)", 
-            symbol=request.form.get('symbol'), share_amount=int(request.form.get('shareAmount')), user=session.get('user_id'), purchase_cost =  int(totalCost))
-            #Update users db, removibg the total cost from the users available funds
-            db.execute("update users set cash=:cash where id=:userid", cash= int(float(funds[0]['cash']) - totalCost), userid=session.get("user_id"))
-            return render_template('buy.html', bought=True, data=(float(funds[0]['cash']) - float(totalCost), request.form.get('symbol'), share['price'], request.form.get('shareAmount')))
+            uid = uuid.uuid4()
+            db.execute("insert into transactions (id, transactionType, symbol, shareAmount, user, shareCost, date) values (:id 'purchase', :symbol, :share_amount, :user, :costPerShare, datetime('now'))", id=uid,
+            symbol=request.form.get('symbol'), share_amount=int(request.form.get('shareAmount')), user=session.get('user_id'), costPerShare = int(costPerShare))
+
+            db.execute("insert into userstocks (user, transactionID) values (:user, :transactionID)", user=session.get('user_id'), transactionID=uid)
+
+            db.execute("update users set cash=:cash where id=:userid", cash=float(funds[0]['cash']) - (costPerShare * int(request.form.get('shareAmount'))), userid=session.get("user_id"))
+
+            return render_template('buy.html', bought=True, data=(request.form.get('shareAmount'), request.form.get('symbol'), share['price']))
 
     return apology("Error, Please try again.")
 
@@ -93,8 +97,10 @@ def buy():
 @app.route("/history")
 @login_required
 def history():
-    """Show history of transactions"""
-    return apology("TODO")
+    allTransactions = db.execute("select * from transactions inner joinwhere user=:userID", userID=session['user_id'])
+    if allTransactions:
+        return render_template('history.html', data=allTransactions)
+    return apology("You have no transactions!")
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -125,6 +131,7 @@ def login():
 
         # Remember which user has logged in
         session["user_id"] = rows[0]["id"]
+        session["username"] = rows[0]["username"]
 
         # Redirect user to home page
         return redirect("/")
@@ -173,7 +180,14 @@ def register():
 @app.route("/sell", methods=["GET", "POST"])
 @login_required
 def sell():
-    """Sell shares of stock"""
+    if request.method == 'GET':
+        return render_template('buy.html')
+    elif request.form.get('symbol') and request.form.get('numberOfShares') != None and request.form.get('numberOfShares') > 0:
+        usersStocks = db.execute("select distinct sum(shareAmount), symbol from transactions where user=:userID and where symbol=:symbol and where transactionType='purchase' group by symbol", userID=session['user_id'], symbol=request.form.get('symbol'))
+        if usersStocks != None and usersStocks['sum(shareAmount)'] >= request.form.get('numberOfShares'):
+            stock = lookup(request.form.get('symbol'))
+            stockPrice = stock['price']
+
     return apology("TODO")
 
 

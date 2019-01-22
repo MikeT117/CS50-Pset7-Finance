@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block title %}
-    Quote
+    Buy
 {% endblock %}
 
 {% block main %}
@@ -12,6 +12,6 @@
             <button type='submit'>Buy</button>
         </form>
         {% else %}
-        <p> You have purchased {{data[3]}} share(s) in {{data[1]}} at a share cost of {{data[2]}} per share - Funds remaining {{data[0]}}
+        <p> {{data[0]}} share(s) in {{data[1]}} at a share cost of {{data[2]}} per share!
     {% endif %}
 {% endblock %}

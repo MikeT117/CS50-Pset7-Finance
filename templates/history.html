@@ -1,26 +1,28 @@
 {% extends "layout.html" %}
 
 {% block title %}
-    History
 {% endblock %}
 
 {% block main %}
     <table class='table'>
         <thead class='thead-dark'>
             <th>Symbol</th>
-            <th>Shares</th>
-            <th>Total Cost</th>
+            <th>Shares Purchased</th>
+            <th>Cost Per Share</th>
+            <th>Transaction Type</th>
+            <th>Date</th>
         </thead>
         <tbody>
             {% for i in data %}
                 <tr>
                     <td>{{i['symbol']}}</td>
-                    <td>{{i['sum(shareAmount)']}}</td>
-                    <td>{{i['sum(shareCost)']}}</td>
+                    <td>{{i['shareAmount']}}</td>
+                    <td>{{i['shareCost']}}</td>
+                    <td>{{i['transactionType']}}</td>
+                    <td>{{i['date']}}</td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
-    <p> Cash {{cash}}
-    <p> Total Holdings: {{total_holdings}} </p>
 {% endblock %}
+

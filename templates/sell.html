@@ -1,0 +1,17 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    Sell
+{% endblock %}
+
+{% block main %}
+    {% if sold == False %}
+        <form action='/sell' method='POST'>
+            <input type='text' name='symbol'>
+            <input type='text' name='numberOfShares'>
+            <button type='submit'>Sell</button>
+        </form>
+        {% else %}
+            <p> You have sold {{data['shares']}} for a share price of: {{data['price']}}
+    {% endif %}
+{% endblock %}

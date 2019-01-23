@@ -1,7 +1,7 @@
 import requests
 import urllib.parse
 
-from flask import redirect, render_template, request, session
+from flask import redirect, render_template, request, session, g
 from functools import wraps
 
 
@@ -31,6 +31,7 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         if session.get("user_id") is None:
             return redirect("/login") 
+        g.user=session.get('user_id')
         return f(*args, **kwargs)
     return decorated_function
 

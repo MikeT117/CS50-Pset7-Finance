@@ -12,13 +12,13 @@
             <th>Total Cost</th>
         </thead>
         <tbody>
-            {% for i in data %}
-                <tr>
-                    <td>{{i['symbol']}}</td>
-                    <td>{{i['sum(shareAmount)']}}</td>
-                    <td>{{i['sum(shareCost)']}}</td>
-                </tr>
-            {% endfor %}
+                {% for i in data %}
+                    <tr>
+                        <td>{{i['symbol']}}</td>
+                        <td>{{i['shareAmount']}}</td>
+                        <td>{{i['shareValue']}}</td>
+                    </tr>
+                {% endfor %}
         </tbody>
     </table>
     <p> Cash {{cash}}

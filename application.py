@@ -1,7 +1,7 @@
 import os
 
 from cs50 import SQL
-from flask import Flask, flash, redirect, render_template, request, session
+from flask import Flask, flash, redirect, render_template, request, session, g
 from flask_session import Session
 from tempfile import mkdtemp
 from werkzeug.exceptions import default_exceptions
@@ -55,15 +55,16 @@ db = SQL("sqlite:///finance.db")
 @app.route("/", methods=['GET'])
 @login_required
 def index():
-    user = db.execute("select distinct cash, symbol, sum(shareAmount), sum(shareCost) from users left join userstocks on users.id = userstocks.user left join transactions on userstocks.transactionID = transactions.id where users.id=:userID and transactionType='purchase' group by symbol", userID = session['user_id'])
+    user = db.execute("select distinct cash, symbol, shareAmount, shareValue from users left join user_stocks on users.id = user_stocks.user where users.id=:userID group by symbol", userID=g.user)
     holdingsTotal = 0
-    if user[0]['sum(shareAmount)'] != None:
+    if user[0]['shareAmount']:
         for i in user:
             curr_stock = lookup(i['symbol'])
             curr_price = curr_stock['price']
-            holdingsTotal += curr_price * i['sum(shareAmount)']
+            holdingsTotal += curr_price * i['shareAmount']
         holdingsTotal += user[0]['cash']
     return render_template('index.html', total_holdings=float(holdingsTotal), data=user, cash=float(user[0]['cash']))
+
 
 @app.route("/buy", methods=["GET", "POST"])
 @login_required
@@ -71,25 +72,29 @@ def buy():
     if request.method == 'GET':
         return render_template('buy.html', bought=False)
 
-    elif request.form.get('symbol') and request.form.get('shareAmount') != None:
-        funds = db.execute("select cash from users where id= :id", id = session.get("user_id"))
-        share = lookup(request.form.get('symbol'))
-        costPerShare = share['price']
+    elif request.form.get('symbol') and request.form.get('shareAmount'):
+        symbol = request.form.get('symbol')
+        amountPurchased = int(request.form.get('shareAmount'))
+        userFunds_Stocks = db.execute("select cash, shareAmount, shareValue from users left join user_stocks on users.id = user_stocks.user and user_stocks.symbol=:symbol where users.id=:userID", userID=g.user, symbol=symbol)
+        sharePrice = lookup(request.form.get('symbol'))['price']
 
-        if share == None:
-           return apology("That share doesn't exist.")
+        if sharePrice and (sharePrice * amountPurchased) < float(userFunds_Stocks[0]['cash']):
+            db.execute("insert into transactions (symbol, shareAmount, shareCost, transactionType, date, user) values (:symbol, :shareamount, :costPerShare, 'purchase', datetime('now'), :user)",
+            symbol=symbol, shareamount=amountPurchased, costPerShare=sharePrice, user=g.user)
 
-        elif (costPerShare * int(request.form.get('shareAmount'))) < float(funds[0]['cash']):
-            #Add purchase to purchases DB, USing user id as link
-            uid = uuid.uuid4()
-            db.execute("insert into transactions (id, transactionType, symbol, shareAmount, user, shareCost, date) values (:id 'purchase', :symbol, :share_amount, :user, :costPerShare, datetime('now'))", id=uid,
-            symbol=request.form.get('symbol'), share_amount=int(request.form.get('shareAmount')), user=session.get('user_id'), costPerShare = int(costPerShare))
+            if userFunds_Stocks[0]['shareAmount']:
+                db.execute("update user_stocks set shareAmount=:share_amount, shareValue=:shareValue", share_amount=amountPurchased + int(userFunds_Stocks[0]['shareAmount']), 
+                shareValue=userFunds_Stocks[0]['shareAmount'] + (amountPurchased * sharePrice))
 
-            db.execute("insert into userstocks (user, transactionID) values (:user, :transactionID)", user=session.get('user_id'), transactionID=uid)
+            else:
+                db.execute("insert into user_stocks (symbol, shareAmount, user, shareValue) values (:symbol, :share_amount, :user, :costPerShare)", 
+                symbol=symbol, share_amount=amountPurchased, costPerShare=sharePrice * amountPurchased, user=g.user)
 
-            db.execute("update users set cash=:cash where id=:userid", cash=float(funds[0]['cash']) - (costPerShare * int(request.form.get('shareAmount'))), userid=session.get("user_id"))
+            db.execute("update users set cash=:cash where id=:userid", cash=float(userFunds_Stocks[0]['cash']) - (sharePrice * amountPurchased), userid=g.user)
 
-            return render_template('buy.html', bought=True, data=(request.form.get('shareAmount'), request.form.get('symbol'), share['price']))
+            return render_template('buy.html', bought=True, data=(amountPurchased, symbol, sharePrice))
+        else:
+            return apology("That share doesn't exist.")
 
     return apology("Error, Please try again.")
 
@@ -97,7 +102,7 @@ def buy():
 @app.route("/history")
 @login_required
 def history():
-    allTransactions = db.execute("select * from transactions inner joinwhere user=:userID", userID=session['user_id'])
+    allTransactions = db.execute("select * from transactions where user=:userID", userID=g.user)
     if allTransactions:
         return render_template('history.html', data=allTransactions)
     return apology("You have no transactions!")
@@ -181,14 +186,21 @@ def register():
 @login_required
 def sell():
     if request.method == 'GET':
-        return render_template('buy.html')
-    elif request.form.get('symbol') and request.form.get('numberOfShares') != None and request.form.get('numberOfShares') > 0:
-        usersStocks = db.execute("select distinct sum(shareAmount), symbol from transactions where user=:userID and where symbol=:symbol and where transactionType='purchase' group by symbol", userID=session['user_id'], symbol=request.form.get('symbol'))
-        if usersStocks != None and usersStocks['sum(shareAmount)'] >= request.form.get('numberOfShares'):
-            stock = lookup(request.form.get('symbol'))
-            stockPrice = stock['price']
+        return render_template('sell.html', sold=False)
 
-    return apology("TODO")
+    elif request.form.get('symbol') and request.form.get('numberOfShares') != None and int(request.form.get('numberOfShares')) > 0:
+        symbol = request.form.get('symbol')
+        noOfShares = request.form.get('numberOfShares')
+        try:
+            usersStocks = db.execute("select shareAmount, shareValue, symbol from user_stocks where user=:userID and symbol=:symbol", userID=g.user, symbol=symbol)[0]
+        except:
+            return apology("You have no stock :(")
+        if usersStocks and int(usersStocks['shareAmount']) >= int(request.form.get('numberOfShares')):
+            stockPrice = lookup(symbol)['price']
+            db.execute("update user_stocks set shareAmount=:shareAmount, shareValue=:shareValue where symbol=:symbol and user=:user", 
+            shareAmount=(int(usersStocks['shareAmount']) - int(noOfShares)), shareValue=usersStocks['shareValue'] - (stockPrice * int(noOfShares)), symbol=symbol, user=g.user)
+            return render_template('sell.html', sold=True, data={'shares': noOfShares, 'price': stockPrice})
+    return apology("So many issues!!!!")
 
 
 def errorhandler(e):

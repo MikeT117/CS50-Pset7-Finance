@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    Log In
+{% endblock %}
+
+{% block main %}
+    <p>Username: {{data['username']}}</p>
+    <p>Available Funds: {{data['cash']}}</p>
+    <form action='/account/changePW' method='POST'>
+        <input type='text' name='password' placeholder='Password'>
+        <input type='text' name='confirmation' placeholder='Confirm Password'>
+        <button type='submit'>Change Password</button>
+    </form>
+    {% if request.args.get('pwChanged') == 'True' %}
+        </br>
+        <p>Your PW has been Changed!</p>
+    {% endif %}
+{% endblock %}

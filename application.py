@@ -1,6 +1,6 @@
 import os
 from cs50 import SQL
-from flask import Flask, flash, redirect, render_template, request, session, g
+from flask import Flask, flash, redirect, render_template, request, session, g, url_for
 from flask_session import Session
 from tempfile import mkdtemp
 from werkzeug.exceptions import default_exceptions
@@ -42,7 +42,10 @@ def addTransaction(symbol, shareamount, costPerShare, TType):
 @app.route("/", methods=['GET'])
 @login_required
 def index():
-    user = db.execute("select distinct cash, symbol, shareAmount, shareValue from users left join user_stocks on users.id = user_stocks.user where users.id=:userID group by symbol", userID=g.user)
+    try:
+        user = db.execute("select distinct cash, symbol, shareAmount, shareValue from users left join user_stocks on users.id = user_stocks.user where users.id=:userID group by symbol", userID=g.user)
+    except Exception as err:
+        return apology(err)
     holdingsTotal = 0
     if user[0]['shareAmount']:
         for i in user:
@@ -158,6 +161,25 @@ def register():
             return redirect('/login')
     #else:
     #    return apology("Username, Password or confitmation incorrect, Please try again!", 403)
+
+@app.route('/account', methods=['GET'])
+@login_required
+def account():
+    return render_template('account.html', data=db.execute("select * from users where id=:userID", userID=g.user)[0])
+
+@app.route('/account/changePW', methods=['POST'])
+@login_required
+def updatePassword():
+    pw = request.form.get('password')
+    cpw = request.form.get('confirmation')
+    if pw == cpw:
+        hashPW = generate_password_hash(pw, method='pbkdf2:sha256', salt_length=8)
+        try:
+            db.execute("update users set hash=:pw", pw=hashPW)
+        except Exception as err:
+            return apology(err)
+        return redirect(url_for('account', pwChanged=True))
+    return redirect(url_for('account', pwChanged=False))
 
 @app.route("/sell", methods=["GET", "POST"])
 @login_required

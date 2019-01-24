@@ -1,14 +1,10 @@
 import os
-
 from cs50 import SQL
 from flask import Flask, flash, redirect, render_template, request, session, g
 from flask_session import Session
 from tempfile import mkdtemp
 from werkzeug.exceptions import default_exceptions
 from werkzeug.security import check_password_hash, generate_password_hash
-import uuid
-
-
 from helpers import apology, login_required, lookup, usd
 
 # Configure application
@@ -37,20 +33,11 @@ Session(app)
 # Configure CS50 Library to use SQLite database
 db = SQL("sqlite:///finance.db")
 
+#TODO Refactor, create function to get info. Add sql queries inside trys
 
-
-#TODO Complete the implementation of index in such a way that it displays an HTML table summarizing, 
-# for the user currently logged in, which stocks the user owns, the numbers of shares owned, the current 
-# price of each stock, and the total value of each holding (i.e., shares times price). Also display the 
-# user’s current cash balance along with a grand total (i.e., stocks' total value plus cash).
-
-#for each user:
-#stocks user owns, 
-#amount of share in that stock, 
-#current price of the stock, 
-#total value of the holding, 
-#users cash balance, 
-#grand total(stock value + total cash) this uses current costs i.e. use lookup
+def addTransaction(symbol, shareamount, costPerShare, TType):
+    db.execute("insert into transactions (symbol, shareAmount, shareCost, transactionType, date, user) values (:symbol, :shareamount, :costPerShare, :TType, datetime('now'), :user)",
+    symbol=symbol, shareamount=shareamount, costPerShare=costPerShare, user=g.user, TType=TType)
 
 @app.route("/", methods=['GET'])
 @login_required
@@ -59,12 +46,9 @@ def index():
     holdingsTotal = 0
     if user[0]['shareAmount']:
         for i in user:
-            curr_stock = lookup(i['symbol'])
-            curr_price = curr_stock['price']
-            holdingsTotal += curr_price * i['shareAmount']
+            holdingsTotal += lookup(i['symbol'])['price'] * i['shareAmount']
         holdingsTotal += user[0]['cash']
     return render_template('index.html', total_holdings=float(holdingsTotal), data=user, cash=float(user[0]['cash']))
-
 
 @app.route("/buy", methods=["GET", "POST"])
 @login_required
@@ -79,8 +63,7 @@ def buy():
         sharePrice = lookup(request.form.get('symbol'))['price']
 
         if sharePrice and (sharePrice * amountPurchased) < float(userFunds_Stocks[0]['cash']):
-            db.execute("insert into transactions (symbol, shareAmount, shareCost, transactionType, date, user) values (:symbol, :shareamount, :costPerShare, 'purchase', datetime('now'), :user)",
-            symbol=symbol, shareamount=amountPurchased, costPerShare=sharePrice, user=g.user)
+            addTransaction(symbol, amountPurchased, sharePrice, 'purchase')
 
             if userFunds_Stocks[0]['shareAmount']:
                 db.execute("update user_stocks set shareAmount=:share_amount, shareValue=:shareValue", share_amount=amountPurchased + int(userFunds_Stocks[0]['shareAmount']), 
@@ -98,7 +81,6 @@ def buy():
 
     return apology("Error, Please try again.")
 
-
 @app.route("/history")
 @login_required
 def history():
@@ -106,7 +88,6 @@ def history():
     if allTransactions:
         return render_template('history.html', data=allTransactions)
     return apology("You have no transactions!")
-
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -145,7 +126,6 @@ def login():
     else:
         return render_template("login.html")
 
-
 @app.route("/logout")
 def logout():
     """Log user out"""
@@ -156,7 +136,6 @@ def logout():
     # Redirect user to login form
     return redirect("/")
 
-
 @app.route("/quote", methods=["GET", "POST"])
 @login_required
 def quote():
@@ -166,7 +145,6 @@ def quote():
         return render_template('quoted.html', data=lookup(request.form.get('symbol')))
     else:
         return apology("Invalid Stock Symbol", 403)
-
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -181,7 +159,6 @@ def register():
     #else:
     #    return apology("Username, Password or confitmation incorrect, Please try again!", 403)
 
-
 @app.route("/sell", methods=["GET", "POST"])
 @login_required
 def sell():
@@ -192,21 +169,26 @@ def sell():
         symbol = request.form.get('symbol')
         noOfShares = request.form.get('numberOfShares')
         try:
-            usersStocks = db.execute("select shareAmount, shareValue, symbol from user_stocks where user=:userID and symbol=:symbol", userID=g.user, symbol=symbol)[0]
+            usersStocks = db.execute("select shareAmount, shareValue, symbol, cash from users left join user_stocks on users.id = user_stocks.user where users.id=:userID and user_stocks.symbol=:symbol", userID=g.user, symbol=symbol)[0]
         except:
             return apology("You have no stock :(")
         if usersStocks and int(usersStocks['shareAmount']) >= int(request.form.get('numberOfShares')):
             stockPrice = lookup(symbol)['price']
-            db.execute("update user_stocks set shareAmount=:shareAmount, shareValue=:shareValue where symbol=:symbol and user=:user", 
-            shareAmount=(int(usersStocks['shareAmount']) - int(noOfShares)), shareValue=usersStocks['shareValue'] - (stockPrice * int(noOfShares)), symbol=symbol, user=g.user)
+
+            if int(usersStocks['shareAmount']) == int(request.form.get('numberOfShares')):
+                db.execute("delete from user_stocks where user=:userID and symbol=:symbol", userID=g.user, symbol=symbol)
+            else:
+                db.execute("update user_stocks set shareAmount=:shareAmount, shareValue=:shareValue where symbol=:symbol and user=:user", shareAmount=(int(usersStocks['shareAmount']) - int(noOfShares)), shareValue=usersStocks['shareValue'] - (stockPrice * int(noOfShares)), symbol=symbol, user=g.user)
+            
+            db.execute("update users set cash=:cash where id=:userID", cash=(float(usersStocks['cash']) + (stockPrice * int(noOfShares))), userID=g.user)
+            addTransaction(symbol, noOfShares, stockPrice, 'sale')
+            
             return render_template('sell.html', sold=True, data={'shares': noOfShares, 'price': stockPrice})
     return apology("So many issues!!!!")
-
 
 def errorhandler(e):
     """Handle error"""
     return apology(e.name, e.code)
-
 
 # listen for errors
 for code in default_exceptions:
